@@ -10,8 +10,7 @@ import { getProducts } from '../services/productApi';
 import { GlassCard } from '../components/ui/GlassCard';
 import Loader from '../components/ui/Loader';
 import Scene from '../components/3d/Scene';
-import Avatar from '../components/3d/Avatar';
-import ClothingMesh from '../components/3d/ClothingMesh';
+import RealisticAvatar from '../components/3d/RealisticAvatar';
 import CanvasErrorBoundary from '../components/3d/CanvasErrorBoundary';
 
 /* ── Fallback style → color map (used when product has no `color` field) ── */
@@ -32,6 +31,7 @@ const VirtualTryOn = () => {
 
   const [allProducts, setAllProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [outfit, setOutfit] = useState({});
   const [loading, setLoading] = useState(true);
   const [showClothing, setShowClothing] = useState(true);
 
@@ -45,11 +45,26 @@ const VirtualTryOn = () => {
         const products = await getProducts();
         setAllProducts(products);
 
-        if (productId) {
-          const found = products.find(p => String(p.id) === String(productId));
-          setSelectedProduct(found || products[0] || null);
-        } else if (products.length > 0) {
-          setSelectedProduct(products[0]);
+        if (products.length > 0) {
+          // Fill initial outfit with one of each category
+          const initialOutfit = {};
+          products.forEach(p => {
+            if (['outerwear', 'pants', 'shirt', 'accessory', 'footwear', 'dress'].includes(p.category)) {
+              if (!initialOutfit[p.category]) initialOutfit[p.category] = p;
+            }
+          });
+          setOutfit(initialOutfit);
+
+          if (productId) {
+            const found = products.find(p => String(p._id) === String(productId) || String(p.id) === String(productId));
+            setSelectedProduct(found || products[0] || null);
+            if (found) {
+              initialOutfit[found.category] = found;
+              setOutfit({ ...initialOutfit });
+            }
+          } else {
+            setSelectedProduct(products[0]);
+          }
         }
       } catch (err) {
         console.error('VirtualTryOn: failed to load products', err);
@@ -71,10 +86,23 @@ const VirtualTryOn = () => {
     };
   }, [user?.biometrics]);
 
-  // Use product's own color, or fall back to style-based color
-  const clothingColor = selectedProduct
-    ? (selectedProduct.color || STYLE_COLORS[selectedProduct.style] || STYLE_COLORS.default)
-    : STYLE_COLORS.default;
+  // Map out the colors for each category in the current outfit
+  const outfitColors = useMemo(() => {
+    const colors = {};
+    ['outerwear', 'pants', 'shirt', 'accessory', 'footwear', 'dress'].forEach(cat => {
+      const p = outfit[cat];
+      colors[cat] = p ? (p.color || STYLE_COLORS[p.style] || STYLE_COLORS.default) : null;
+    });
+    return colors;
+  }, [outfit]);
+
+  const handleProductSelect = (product) => {
+    setSelectedProduct(product);
+    setOutfit(prev => ({
+      ...prev,
+      [product.category]: product
+    }));
+  };
 
   const productImage = selectedProduct
     ? (selectedProduct.image_url || selectedProduct.image || '')
@@ -113,16 +141,17 @@ const VirtualTryOn = () => {
 
             <div className="flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-y-auto lg:max-h-[calc(100vh-280px)] pb-2">
               {allProducts.map((product) => {
-                const isActive = selectedProduct?.id === product.id;
+                const uniqueId = product._id || product.id;
+                const isActive = (selectedProduct?._id || selectedProduct?.id) === uniqueId;
                 const pColor = product.color || STYLE_COLORS[product.style] || STYLE_COLORS.default;
 
                 return (
                   <button
-                    key={product.id}
-                    onClick={() => setSelectedProduct(product)}
+                    key={uniqueId}
+                    onClick={() => handleProductSelect(product)}
                     className={`flex-shrink-0 w-44 lg:w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-300 text-left ${isActive
-                        ? 'bg-neon-cyan/10 border border-neon-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]'
-                        : 'hover:bg-white/5 border border-transparent hover:border-white/10'
+                      ? 'bg-neon-cyan/10 border border-neon-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]'
+                      : 'hover:bg-white/5 border border-transparent hover:border-white/10'
                       }`}
                   >
                     {/* Color swatch */}
@@ -155,8 +184,8 @@ const VirtualTryOn = () => {
                 onClick={() => setShowClothing(!showClothing)}
                 title={showClothing ? 'Hide clothing' : 'Show clothing'}
                 className={`p-2.5 rounded-lg backdrop-blur-md transition-all duration-300 border ${showClothing
-                    ? 'bg-neon-cyan/20 border-neon-cyan/50 text-neon-cyan shadow-[0_0_10px_rgba(0,240,255,0.3)]'
-                    : 'bg-black/40 border-white/10 text-chrome-400 hover:text-chrome-200'
+                  ? 'bg-neon-cyan/20 border-neon-cyan/50 text-neon-cyan shadow-[0_0_10px_rgba(0,240,255,0.3)]'
+                  : 'bg-black/40 border-white/10 text-chrome-400 hover:text-chrome-200'
                   }`}
               >
                 <Eye className="w-4 h-4" />
@@ -191,16 +220,17 @@ const VirtualTryOn = () => {
               productName={selectedProduct?.name}
             >
               <Scene>
-                {/* Avatar = STABLE body that never changes on product swap */}
-                <Avatar measurements={measurements} />
-
-                {/* ClothingMesh = DYNAMIC overlay that changes per product */}
-                {showClothing && selectedProduct && (
-                  <ClothingMesh
-                    style={selectedProduct.style || 'default'}
-                    color={clothingColor}
+                {showClothing && Object.keys(outfit).length > 0 ? (
+                  <RealisticAvatar
                     measurements={measurements}
-                    visible={true}
+                    outfitColors={outfitColors}
+                    outfit={outfit}
+                  />
+                ) : (
+                  <RealisticAvatar
+                    measurements={measurements}
+                    outfitColors={{}}
+                    outfit={{}}
                   />
                 )}
               </Scene>
@@ -227,11 +257,14 @@ const VirtualTryOn = () => {
                   className="mb-6 p-3 rounded-lg bg-neon-purple/5 border border-neon-purple/20"
                 >
                   <p className="font-space text-xs text-chrome-400 uppercase mb-1">Active Garment</p>
-                  <p className="font-orbitron text-sm text-chrome-100 mb-2">{selectedProduct.name}</p>
+                  <p className="font-orbitron text-sm text-chrome-100 mb-1">{selectedProduct.name}</p>
+                  {selectedProduct.price && (
+                    <p className="font-orbitron text-xs text-neon-cyan mb-2">${selectedProduct.price}</p>
+                  )}
                   <div className="flex items-center gap-2">
                     <div
                       className="w-5 h-5 rounded-md border border-white/20 shadow-inner"
-                      style={{ backgroundColor: clothingColor }}
+                      style={{ backgroundColor: outfitColors[selectedProduct?.category] }}
                     />
                     <span className="font-space text-xs text-chrome-400 uppercase">
                       {selectedProduct.style || 'N/A'}
@@ -242,6 +275,11 @@ const VirtualTryOn = () => {
                       </span>
                     )}
                   </div>
+                  {selectedProduct.description && (
+                    <p className="font-space text-[10px] text-chrome-500 mt-2 leading-relaxed">
+                      {selectedProduct.description}
+                    </p>
+                  )}
                   {selectedProduct.score && (
                     <div className="flex items-center gap-1 mt-2 text-neon-pink">
                       <Sparkles className="w-3 h-3" />

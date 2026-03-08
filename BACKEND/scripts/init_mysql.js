@@ -3,7 +3,6 @@ const db = require('../config/db');
 require('dotenv').config();
 
 const ensureDatabase = async () => {
-    // Create the database if it does not exist, using a temporary root connection
     const conn = await mysql.createConnection({
         host: process.env.DB_HOST || 'localhost',
         user: process.env.DB_USER || 'root',
@@ -13,10 +12,8 @@ const ensureDatabase = async () => {
     await conn.end();
 };
 
-
 const initMySQL = async () => {
     try {
-        // Ensure the database itself exists before trying to create tables
         await ensureDatabase();
         console.log('⏳ Initializing MySQL Tables...');
 
@@ -38,10 +35,28 @@ const initMySQL = async () => {
         `);
         console.log('✅ Users table ready');
 
-        // 2. Designs Table (MySQL Metadata)
+        // 2. Products Table (for catalog + antigravity ranking)
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS products (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                category VARCHAR(100) NOT NULL,
+                style VARCHAR(100),
+                image_url VARCHAR(500),
+                color VARCHAR(50),
+                tags JSON,
+                popularity_score INT DEFAULT 5,
+                total_interactions INT DEFAULT 0,
+                recent_interactions INT DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('✅ Products table ready');
+
+        // 3. Designs Table (MySQL Metadata)
         await db.execute(`
             CREATE TABLE IF NOT EXISTS designs (
-                id VARCHAR(50) PRIMARY KEY, -- Using VARCHAR to accommodate MongoDB IDs or UUIDs
+                id VARCHAR(50) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 image_url VARCHAR(500),
                 author_id INT NULL,
@@ -53,7 +68,7 @@ const initMySQL = async () => {
         `);
         console.log('✅ Designs table ready');
 
-        // 3. Design Tags Table
+        // 4. Design Tags Table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS design_tags (
                 design_id VARCHAR(50) NOT NULL,
@@ -64,7 +79,7 @@ const initMySQL = async () => {
         `);
         console.log('✅ Design Tags table ready');
 
-        // 4. Saved Wardrobes Table
+        // 5. Saved Wardrobes Table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS saved_wardrobes (
                 user_id INT NOT NULL,
@@ -77,7 +92,7 @@ const initMySQL = async () => {
         `);
         console.log('✅ Saved Wardrobes table ready');
 
-        // 5. Community Feed Table
+        // 6. Community Feed Table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS community_feed (
                 design_id VARCHAR(50) PRIMARY KEY,
